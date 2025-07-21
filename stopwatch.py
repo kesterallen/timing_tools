@@ -1,86 +1,95 @@
-""" Simple curses-based stopwatch tool """
+"""Simple stopwatch tool"""
 
 import curses
-from curses import A_BOLD, A_NORMAL
 import datetime as dt
 import sys
 
-COL = 0
-HEADER = ["Stopwatch: q to quit, space to mark a lap, u to undo a mark", "", "Time       lap (#)   total"]
-HEADER_ROWS = len(HEADER)
-
-BLANK_LINE = "                                          "
-BUFFER_ROWS = 0
-
-is_bold = False
+HEADER = [
+    "Stopwatch: q to quit, space to mark a lap, u to undo a mark",
+    "",
+    "Time       lap (#)   total",
+]
+BLANK_LINE = " " * 42
 
 
-def tds(td: dt.timedelta):
-    """The number of seconds in the time delta in %.1f precision"""
-    return f"{td.total_seconds():.1f}"
+class StopwatchDisplay:
+    def __init__(self, screen):
+        self.screen = screen
+        self.col = 0
+        self.header_rows = len(HEADER)
+        self.buffer_rows = self.screen.getmaxyx()[0] - self.header_rows
+
+        self.init_curses()
+        self.draw_header()
+
+    def init_curses(self):
+        curses.noecho()
+        curses.cbreak()
+        self.screen.nodelay(True)
+
+    def draw_header(self):
+        for i, line in enumerate(HEADER):
+            self.screen.addstr(i, self.col, line)
+
+    def write_line(self, line, lap_num):
+        row = self.header_rows + (lap_num % self.buffer_rows)
+        self.screen.addstr(row, self.col, line)
+
+    def clear_row(self, lap_num):
+        self.write_line(BLANK_LINE, lap_num)
 
 
-def hms(dt: dt.datetime):
-    """Hours:Minutes:Seconds string for a datetime"""
-    return dt.strftime("%H:%M:%S")
+class Stopwatch:
+    def __init__(self, screen):
+        self.display = StopwatchDisplay(screen)
+        self.start_time = dt.datetime.now()
+        self.marks = [self.start_time]
+        self.lap_num = 0
 
+    def run(self):
+        while True:
+            try:
+                key = self.display.screen.getkey()
+                if key == "q":
+                    sys.exit(0)
+                elif key == " ":
+                    self.add_mark()
+                elif key == "u":
+                    self.undo()
+            except curses.error:
+                self.update_display()
 
-def fmt(is_bold: bool):
-    """Curses formatting attribute"""
-    return A_BOLD if is_bold else A_NORMAL
+    def add_mark(self):
+        self.lap_num += 1
+        self.marks.append(dt.datetime.now())
 
-def write_row(line: str, lap_num: int, is_bold: bool, screen: curses.window) -> None:
-    """Write 'line' to the current row on the screen"""
-    row = HEADER_ROWS + lap_num % BUFFER_ROWS
-    screen.addstr(row, COL, line, fmt(is_bold))
+    def undo(self):
+        if len(self.marks) < 2:
+            return
 
-def init(screen):
-    global BUFFER_ROWS
-    BUFFER_ROWS = screen.getmaxyx()[0] - HEADER_ROWS
+        # TODO if undo wraps over the top of the screen, redraw a screen's worth of marks
+        # TODO or just always display the last N marks
+        self.display.clear_row(self.lap_num)
+        self.lap_num -= 1
+        self.marks.pop()
 
-    curses.noecho()  # Disable echoing of input
-    curses.cbreak()  # React to keys instantly
-    screen.nodelay(True)  # Set non-blocking mode
+    def update_display(self):
+        now = dt.datetime.now()
+        since_last = now - self.marks[-1]
+        since_start = now - self.start_time
+
+        line = (
+            f"{now.strftime('%H:%M:%S')}   "
+            f"{since_last.total_seconds():.1f} "
+            f"(#{self.lap_num+1})   "
+            f"{since_start.total_seconds():.1f}"
+        )
+        self.display.write_line(line, self.lap_num)
+
 
 def main(screen):
-    """Main stopwatch function"""
-
-    init(screen)
-    start = dt.datetime.now()
-    marks = [start]
-    lap_num = 0
-
-    # Header
-    for irow, line in enumerate(HEADER):
-        screen.addstr(irow, COL, line)
-
-    # Timer loop
-    while True:
-        try:
-            key = screen.getkey()  # Non-blocking getkey()
-            if key == "q":
-                sys.exit(0)
-            if key == " ":  # mark a lap and move to the next row
-                lap_num += 1
-                marks.append(dt.datetime.now())
-            if key == "u":  # undo last mark
-                if len(marks) < 2:
-                    continue
-                write_row(BLANK_LINE, lap_num, is_bold, screen)
-                lap_num -= 1
-                marks.pop(-1)
-        except curses.error:
-            # No key was pressed, print the time
-            now = dt.datetime.now()
-            since_mark = now - marks[-1]
-            since_start = now - start
-
-            # Toggle bold text when the display wraps to the top:
-            if lap_num % BUFFER_ROWS == 0:
-                is_bold = lap_num // BUFFER_ROWS % 2 != 0
-
-            line = f"{hms(now)}   {tds(since_mark)} (#{lap_num+1})   {tds(since_start)}"
-            write_row(line, lap_num, is_bold, screen)
+    stopwatch = Stopwatch(screen)
+    stopwatch.run()
 
 
 if __name__ == "__main__":
