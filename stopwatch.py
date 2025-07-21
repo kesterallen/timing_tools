@@ -34,8 +34,7 @@ def main(screen):
     screen.nodelay(True)  # Set non-blocking mode
 
     start = datetime.now()
-    #TODO: array of marks instead of mark to support undo
-    mark = start
+    marks = [start]
 
     lap_num = 0
 
@@ -53,11 +52,15 @@ def main(screen):
                 sys.exit(0)
             if key == " ":  # mark a lap and move to the next row
                 lap_num += 1
-                mark = datetime.now()
+                marks.append(datetime.now())
+            if key == "u":  # undo last mark
+                #TODO can't undo past the start
+                lap_num -= 1
+                marks.pop(-1)
         except curses.error:
             # No key was pressed, print the time
             now = datetime.now()
-            since_mark = now - mark
+            since_mark = now - marks[-1]
             since_start = now - start
 
             # Toggle bold text when the display wraps to the top:
