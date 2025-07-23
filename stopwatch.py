@@ -1,6 +1,7 @@
 """Simple stopwatch tool"""
 
 import curses
+from curses import A_BOLD, A_NORMAL
 import datetime as dt
 import sys
 
@@ -33,9 +34,9 @@ class StopwatchDisplay:
         for i, header_row in enumerate(HEADER):
             self.screen.addstr(i, 0, header_row)
 
-    def write_buffer_row(self, buffer_row_text, lap_num):
+    def write_buffer_row(self, buffer_row_text, lap_num, text_fmt=A_NORMAL):
         row = self.num_header_rows + (lap_num % self.num_buffer_rows)
-        self.screen.addstr(row, 0, buffer_row_text)
+        self.screen.addstr(row, 0, buffer_row_text, text_fmt)
 
     def clear_row(self, lap_num):
         self.write_buffer_row(BLANK_ROW, lap_num)
@@ -100,7 +101,8 @@ class Stopwatch:
         if istart < 0:
             istart = 0
         for i in range(istart, istop):
-            self.display.write_buffer_row(rows[i], i - istart)
+            text_fmt = A_BOLD if i == istop - 1 else A_NORMAL
+            self.display.write_buffer_row(rows[i], i - istart, text_fmt)
 
 
 def main(screen):
