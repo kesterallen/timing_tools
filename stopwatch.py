@@ -4,20 +4,22 @@ import curses
 import datetime as dt
 import sys
 
+MARK_KEYS = [" ", "j", "n", "m"]
+DROP_KEYS = ["u", "k", "p"]
+
 HEADER = [
-    "Stopwatch: q to quit, space to mark a lap, u to undo a mark",
+    "Stopwatch: q to quit, space/j/n/m to mark a lap, u/k/p to undo a mark",
     "",
-    "Time       lap (#)   total",
+    "Time       lap(s) (#)   total(s)",
 ]
-BLANK_LINE = " " * 42
+BLANK_ROW = " " * 42
 
 
 class StopwatchDisplay:
     def __init__(self, screen):
         self.screen = screen
-        self.col = 0
-        self.header_rows = len(HEADER)
-        self.buffer_rows = self.screen.getmaxyx()[0] - self.header_rows
+        self.num_header_rows = len(HEADER)
+        self.num_buffer_rows = self.screen.getmaxyx()[0] - self.num_header_rows
 
         self.init_curses()
         self.draw_header()
@@ -28,23 +30,22 @@ class StopwatchDisplay:
         self.screen.nodelay(True)
 
     def draw_header(self):
-        for i, line in enumerate(HEADER):
-            self.screen.addstr(i, self.col, line)
+        for i, header_row in enumerate(HEADER):
+            self.screen.addstr(i, 0, header_row)
 
-    def write_line(self, line, lap_num):
-        row = self.header_rows + (lap_num % self.buffer_rows)
-        self.screen.addstr(row, self.col, line)
+    def write_buffer_row(self, buffer_row_text, lap_num):
+        row = self.num_header_rows + (lap_num % self.num_buffer_rows)
+        self.screen.addstr(row, 0, buffer_row_text)
 
     def clear_row(self, lap_num):
-        self.write_line(BLANK_LINE, lap_num)
+        self.write_buffer_row(BLANK_ROW, lap_num)
 
 
 class Stopwatch:
     def __init__(self, screen):
         self.display = StopwatchDisplay(screen)
         self.start_time = dt.datetime.now()
-        self.marks = [self.start_time]
-        self.lap_num = 0
+        self.timestamps = [dt.datetime.now()]
 
     def run(self):
         while True:
@@ -52,39 +53,54 @@ class Stopwatch:
                 key = self.display.screen.getkey()
                 if key == "q":
                     sys.exit(0)
-                elif key == " ":
-                    self.add_mark()
-                elif key == "u":
-                    self.undo()
+                elif key in MARK_KEYS:
+                    self.add_timestamp()
+                elif key in DROP_KEYS:
+                    self.remove_timestamp()
             except curses.error:
-                self.update_display()
+                self.write_buffer()
 
-    def add_mark(self):
-        self.lap_num += 1
-        self.marks.append(dt.datetime.now())
+    def add_timestamp(self):
+        self.timestamps.append(dt.datetime.now())
 
-    def undo(self):
-        if len(self.marks) < 2:
+    def remove_timestamp(self):
+        if len(self.timestamps) < 2:
             return
+        self.timestamps.pop()
 
-        # TODO if undo wraps over the top of the screen, redraw a screen's worth of marks
-        # TODO or just always display the last N marks
-        self.display.clear_row(self.lap_num)
-        self.lap_num -= 1
-        self.marks.pop()
+    def write_buffer(self):
+        def _row_text(time, prev_time, lap_num):
+            return (
+                f"{time.strftime('%H:%M:%S')}   "
+                f"{(time - prev_time).total_seconds():.1f}    "
+                f"({lap_num})   "
+                f"{(time - self.start_time).total_seconds():.1f}"
+            )
 
-    def update_display(self):
-        now = dt.datetime.now()
-        since_last = now - self.marks[-1]
-        since_start = now - self.start_time
+        rows = []
 
-        line = (
-            f"{now.strftime('%H:%M:%S')}   "
-            f"{since_last.total_seconds():.1f} "
-            f"(#{self.lap_num+1})   "
-            f"{since_start.total_seconds():.1f}"
-        )
-        self.display.write_line(line, self.lap_num)
+        # Recorded timestamps -> static updates. Skip first timestamp because
+        # that's the zero point.
+        for i, time in enumerate(self.timestamps[1:]):
+            prev_time = self.timestamps[i]
+            rows.append(_row_text(time, prev_time, i+1))
+
+        # The bottom row is updated-live (so "time" is now and prev_time is the
+        # last timestamp).
+        time = dt.datetime.now()
+        prev_time = self.timestamps[-1]
+        rows.append(_row_text(time, prev_time, len(self.timestamps)))
+
+        # TODO remove?
+        for i in range(self.display.num_buffer_rows):
+            self.display.clear_row(i)
+
+        istop = len(self.timestamps)
+        istart = istop - self.display.num_buffer_rows
+        if istart < 0:
+            istart = 0
+        for i in range(istart, istop):
+            self.display.write_buffer_row(rows[i], i - istart)
 
 
 def main(screen):
