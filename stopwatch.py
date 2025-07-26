@@ -38,12 +38,12 @@ class StopwatchDisplay:
         self.num_cols = screencols
 
     def get_header_text(self) -> str:
-        units = "s" if self.format_seconds else "m"
+        units = "(s)    " if self.format_seconds else "(mm:ss)"
         return [
             "Stopwatch: q to quit, space/j/n/m to mark a lap, u/k/p to undo a mark, ",
-            "'/' to toggle format",
+            "'/' to toggle time format (seconds or mintutes:seconds)",
             "",
-            f"Time       #  lap({units})   total({units})",
+            f"Time       #  lap{units}   total{units}",
             # "HH:MM:SS  #   #.#       #.#"
         ]
 
@@ -70,7 +70,8 @@ class StopwatchDisplay:
                 prev_str = f"{_td_to_mm_ss(prev_td)}   "
                 start_str = f"{_td_to_mm_ss(start_td)}"
 
-            return f"{time_str} {lap_num:3}  {prev_str} {start_str}"
+            # TODO format for number of seconds digits
+            return f"{time_str} {lap_num:3}  {prev_str}     {start_str}"
 
         rows = []
 
