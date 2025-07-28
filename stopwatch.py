@@ -20,10 +20,11 @@ class StopwatchDisplay:
         self.num_header_rows = len(self.get_header_text())
         self.set_screen_size()
 
+        self.blank_line = " " * (self.num_cols - 1)
+
         self.init_curses()
         self.write_header()
 
-        self.blank_line = " " * (self.num_cols - 1)
 
     def init_curses(self) -> None:
         """Set curses settings"""
@@ -38,18 +39,22 @@ class StopwatchDisplay:
         self.num_cols = screencols
 
     def get_header_text(self) -> str:
-        units = "(s)    " if self.format_seconds else "(mm:ss)"
+        # "HH:MM:SS  #   #.#       #.#"
+        if self.format_seconds:
+            buffer_key = "Time       #    lap(s)     total(s)"
+        else:
+            buffer_key = "Time       #  lap(mm:ss) total(mm:ss)"
         return [
             "Stopwatch: q to quit, space/j/n/m to mark a lap, u/k/p to undo a mark, ",
             "'/' to toggle time format (seconds or mintutes:seconds)",
             "",
-            f"Time       #  lap{units}   total{units}",
-            # "HH:MM:SS  #   #.#       #.#"
+            buffer_key,
         ]
 
     def write_header(self) -> None:
         """Write the header (above the display buffer)"""
         for i, header_row in enumerate(self.get_header_text()):
+            self.screen.addstr(i, 0, self.blank_line) # clear line
             self.screen.addstr(i, 0, header_row)
 
     def get_rows(self, timestamps: list[dt.datetime]) -> list[str]:
@@ -64,10 +69,10 @@ class StopwatchDisplay:
             prev_td = time - previous
             start_td = time - start_time
             if self.format_seconds:
-                prev_str = f"{prev_td.total_seconds():.1f}   "
-                start_str = f"  {start_td.total_seconds():.1f}"
+                prev_str = f"{prev_td.total_seconds():8.1f}"
+                start_str = f"{start_td.total_seconds():8.1f}"
             else:
-                prev_str = f"{_td_to_mm_ss(prev_td)}   "
+                prev_str = f"    {_td_to_mm_ss(prev_td)}   "
                 start_str = f"{_td_to_mm_ss(start_td)}"
 
             # TODO format for number of seconds digits
@@ -145,6 +150,7 @@ class Stopwatch:
                     self.clear_buffer = True
                 elif key == TOGGLE_FORMAT_KEY:
                     self.display.format_seconds = not self.display.format_seconds
+                    self.clear_buffer = True
                     self.display.write_header()
 
             except curses.error:
