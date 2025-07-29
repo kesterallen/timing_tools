@@ -38,7 +38,7 @@ class StopwatchDisplay:
         self.num_buffer_rows = self.num_rows - self.num_header_rows
         self.num_cols = screencols
 
-    def get_header_text(self) -> str:
+    def get_header_text(self) -> list[str]:
         """Generate header text rows"""
         buffer_key = "Time       #" + (
             "    lap(s)     total(s)"
