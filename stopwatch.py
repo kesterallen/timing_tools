@@ -7,7 +7,7 @@ import sys
 
 MARK_KEYS = [" ", "j", "n", "m"]
 DROP_KEYS = ["u", "k", "p"]
-TOGGLE_FORMAT_KEY = "/"
+TOGGLE_FORMAT_KEYS = ["/", "y"]
 
 
 class StopwatchDisplay:
@@ -25,7 +25,6 @@ class StopwatchDisplay:
         self.init_curses()
         self.write_header()
 
-
     def init_curses(self) -> None:
         """Set curses settings"""
         curses.noecho()
@@ -33,20 +32,24 @@ class StopwatchDisplay:
         self.screen.nodelay(True)
 
     def set_screen_size(self) -> None:
+        """Detect and record rows/cols counts"""
         screenrows, screencols = self.screen.getmaxyx()
         self.num_rows = screenrows
         self.num_buffer_rows = self.num_rows - self.num_header_rows
         self.num_cols = screencols
 
     def get_header_text(self) -> str:
-        # "HH:MM:SS  #   #.#       #.#"
-        if self.format_seconds:
-            buffer_key = "Time       #    lap(s)     total(s)"
-        else:
-            buffer_key = "Time       #  lap(mm:ss) total(mm:ss)"
+        """Generate header text rows"""
+        buffer_key = "Time       #" + (
+            "    lap(s)     total(s)"
+            if self.format_seconds
+            else "  lap(mm:ss) total(mm:ss)"
+        )
+
         return [
-            "Stopwatch: q to quit, space/j/n/m to mark a lap, u/k/p to undo a mark, ",
-            "'/' to toggle time format (seconds or mintutes:seconds)",
+            "Stopwatch: ",
+            "q to quit, space/j/n/m to mark a lap, u/k/p to undo a mark, ",
+            "slash/y to toggle time format (seconds or minutes:seconds)",
             "",
             buffer_key,
         ]
@@ -54,10 +57,11 @@ class StopwatchDisplay:
     def write_header(self) -> None:
         """Write the header (above the display buffer)"""
         for i, header_row in enumerate(self.get_header_text()):
-            self.screen.addstr(i, 0, self.blank_line) # clear line
+            self.screen.addstr(i, 0, self.blank_line)  # clear line
             self.screen.addstr(i, 0, header_row)
 
     def get_rows(self, timestamps: list[dt.datetime]) -> list[str]:
+        """Get the rows to print"""
         def _td_to_mm_ss(td: dt.timedelta) -> str:
             mm = int(td.total_seconds()) // 60
             ss = int(td.total_seconds()) % 60
@@ -75,7 +79,6 @@ class StopwatchDisplay:
                 prev_str = f"    {_td_to_mm_ss(prev_td)}   "
                 start_str = f"{_td_to_mm_ss(start_td)}"
 
-            # TODO format for number of seconds digits
             return f"{time_str} {lap_num:3}  {prev_str}     {start_str}"
 
         rows = []
@@ -95,7 +98,9 @@ class StopwatchDisplay:
 
         return rows
 
-    def write_buffer(self, timestamps: list[dt.datetime], clear_buffer: bool = False) -> None:
+    def write_buffer(
+        self, timestamps: list[dt.datetime], clear_buffer: bool = False
+    ) -> None:
         """Write the lap info for each lap into the display buffer"""
 
         rows = self.get_rows(timestamps)
@@ -115,7 +120,9 @@ class StopwatchDisplay:
             if clear_buffer:
                 self.clear_row(i - istart)
 
-    def write_buffer_row(self, lap_num: int, text: str, text_fmt: int = A_NORMAL) -> None:
+    def write_buffer_row(
+        self, lap_num: int, text: str, text_fmt: int = A_NORMAL
+    ) -> None:
         """Write formatted text to a line in the display buffer"""
         row = self.num_header_rows + (lap_num % self.num_buffer_rows)
         self.screen.addstr(row, 0, text, text_fmt)
@@ -148,7 +155,7 @@ class Stopwatch:
                 elif key in DROP_KEYS:
                     self.remove_timestamp()
                     self.clear_buffer = True
-                elif key == TOGGLE_FORMAT_KEY:
+                elif key in TOGGLE_FORMAT_KEYS:
                     self.display.format_seconds = not self.display.format_seconds
                     self.clear_buffer = True
                     self.display.write_header()
