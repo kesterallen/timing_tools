@@ -2,14 +2,21 @@
 
 import curses
 from curses import A_BOLD, A_NORMAL
-import datetime as dt
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 import sys
 
-MARK_KEYS = [" ", "j", "n", "m"]
-DROP_KEYS = ["u", "k", "p"]
-TOGGLE_FORMAT_KEYS = ["/", "y"]
-TOGGLE_VERBOSE_KEYS = ["v"]
-QUIT_KEYS = ["q"]
+
+@dataclass
+class ControlKeys:
+    """Class to encapsulate which user keystrokes do things"""
+
+    mark: frozenset[str, ...] = (" ", "j", "n", "m")
+    drop: frozenset[str, ...] = ("u", "k", "p")
+    resize: frozenset[str, ...] = ("key_resize",)
+    toggle_format: frozenset[str, ...] = ("/", "y")
+    toggle_verbose: frozenset[str, ...] = ("v",)
+    quit: frozenset[str, ...] = ("q",)
 
 
 class StopwatchDisplay:
@@ -20,12 +27,10 @@ class StopwatchDisplay:
         self.screen = screen
         self.clear_buffer = False
         self.format_seconds = True
-        self.num_header_rows = len(self.get_header_text())
-        self.set_screen_size()
-
-        self.blank_line = " " * (self.num_cols - 1)
+        self.verbose = False
 
         self.init_curses()
+        self.set_screen_size()
         self.write_header()
 
     def init_curses(self) -> None:
@@ -37,43 +42,61 @@ class StopwatchDisplay:
     def set_screen_size(self) -> None:
         """Detect and record rows/cols counts"""
         screenrows, screencols = self.screen.getmaxyx()
+        self.num_header_rows = len(self.header_rows)
         self.num_buffer_rows = screenrows - self.num_header_rows
         self.num_cols = screencols
+        self.blank_line = " " * (self.num_cols - 1)
 
-    def get_header_text(self) -> list[str]:
-        """Generate header text rows"""
-        buffer_key = "Time       #" + (
+    def exit_msg(self, timestamps):
+        if self.verbose:
+            header = self.buffer_key
+            buffer = self.get_rows(timestamps, as_string=True)
+            msg = f"{header}\n{buffer}"
+        else:
+            msg = None
+        return msg
+
+    def toggle_verbose(self):
+        self.verbose = not self.verbose
+
+    @property
+    def buffer_key(self) -> str:
+        return "Time       #" + (
             "    lap(s)     total(s)"
             if self.format_seconds
             else "  lap(mm:ss) total(mm:ss)"
         )
 
+    @property
+    def header_rows(self) -> list[str]:
+        """Generate header text rows"""
         return [
-            "Stopwatch: ",
+            "Stopwatch:" + (" (verbose mode)" if self.verbose else ""),
             "q to quit, space/j/n/m to mark a lap, u/k/p to undo a mark, ",
             "slash/y to toggle time format (seconds or minutes:seconds)",
             "v to toggle verbosity (screen dump vs silent quit)",
             "",
-            buffer_key,
+            self.buffer_key,
         ]
 
-    def write_header(self, verbose: bool = False) -> None:
+    def write_header(self) -> None:
         """Write the header (above the display buffer)"""
-        for i, header_row in enumerate(self.get_header_text()):
+        for i, header_row in enumerate(self.header_rows):
             self.screen.addstr(i, 0, self.blank_line)  # clear line
-            if i == 0 and verbose:
-                header_row += " (verbose mode)"
             self.screen.addstr(i, 0, header_row)
 
-    def get_rows(self, timestamps: list[dt.datetime]) -> list[str]:
+    def get_rows(
+        self, timestamps: list[datetime], as_string: bool = False
+    ) -> list[str]:
         """Get the rows to print"""
 
-        def _td_to_mm_ss(td: dt.timedelta) -> str:
+        def _td_to_mm_ss(td: timedelta) -> str:
+            """Convert timedelta to "mm:ss" """
             mm = int(td.total_seconds()) // 60
             ss = int(td.total_seconds()) % 60
             return f"{mm:02}:{ss:02}"
 
-        def _row_text(time: dt.datetime, previous: dt.datetime, lap_num: int) -> str:
+        def _row_text(time: datetime, previous: datetime, lap_num: int) -> str:
             time_str = f"{time.strftime('%H:%M:%S')}"
             start_time = timestamps[0]
             prev_td = time - previous
@@ -98,13 +121,13 @@ class StopwatchDisplay:
 
         # The bottom row is updated-live (so "time" is now and previous is the
         # last timestamp).
-        time = dt.datetime.now()
+        time = datetime.now()
         previous = timestamps[-1]
         rows.append(_row_text(time, previous, len(timestamps)))
 
-        return rows
+        return "\n".join(rows) if as_string else rows
 
-    def write_buffer(self, timestamps: list[dt.datetime]) -> None:
+    def write_buffer(self, timestamps: list[datetime]) -> None:
         """Write the lap info for each lap into the display buffer"""
 
         rows = self.get_rows(timestamps)
@@ -118,8 +141,8 @@ class StopwatchDisplay:
             row_num = i - istart
             if self.clear_buffer:
                 self._clear_row(row_num)
-            text_fmt = A_BOLD if i == istop - 1 else A_NORMAL
-            self._write_buffer_row(row_num, rows[i], text_fmt)
+            fmt = A_BOLD if i == istop - 1 else A_NORMAL
+            self._write_buffer_row(row_num, rows[i], fmt)
 
         # Clear the bottom of the buffer, if requested:
         for i in range(istop, self.num_buffer_rows):
@@ -130,16 +153,21 @@ class StopwatchDisplay:
         if self.clear_buffer:
             self.clear_buffer = False
 
-    def _write_buffer_row(
-        self, lap_num: int, text: str, text_fmt: int = A_NORMAL
-    ) -> None:
+    def _write_buffer_row(self, lap_num: int, text: str, fmt: int = A_NORMAL) -> None:
         """Write formatted text to a line in the display buffer"""
         row = self.num_header_rows + (lap_num % self.num_buffer_rows)
-        self.screen.addstr(row, 0, text, text_fmt)
+        self.screen.addstr(row, 0, text, fmt)
 
     def _clear_row(self, lap_num: int) -> None:
         """Erase one row"""
         self._write_buffer_row(lap_num, self.blank_line)
+
+    def check_clear(self, num_rows: int = 9999):
+        """
+        Set the toggle to clear the buffer if there are too many rows to
+        display, or if called without args.
+        """
+        self.clear_buffer = num_rows > self.num_buffer_rows
 
 
 class Stopwatch:
@@ -148,29 +176,29 @@ class Stopwatch:
     def __init__(self, screen: curses.window) -> None:
         """Create a Stopwatch object"""
         self.display = StopwatchDisplay(screen)
-        self.timestamps = [dt.datetime.now()]
+        self.timestamps = [datetime.now()]
 
     def run(self) -> None:
         """Run the stopwatch"""
-        verbose = False
+        keys = ControlKeys()
         while True:
             try:
-                key = self.display.screen.getkey()
-                if key in QUIT_KEYS:
-                    rows = self.display.get_rows(self.timestamps) if verbose else []
-                    sys.exit("\n".join(rows))
-                elif key == curses.KEY_RESIZE:
+                key = self.display.screen.getkey().lower()
+                if key in keys.quit:
+                    msg = self.display.exit_msg(self.timestamps)
+                    sys.exit(msg)
+                elif key in keys.resize:
                     self.display.set_screen_size()
-                elif key in MARK_KEYS:
+                elif key in keys.mark:
                     self.add_timestamp()
-                elif key in DROP_KEYS:
+                elif key in keys.drop:
                     self.remove_timestamp()
-                elif key in TOGGLE_VERBOSE_KEYS:
-                    verbose = not verbose
-                    self.display.write_header(verbose)
-                elif key in TOGGLE_FORMAT_KEYS:
+                elif key in keys.toggle_verbose:
+                    self.display.toggle_verbose()
+                    self.display.write_header()
+                elif key in keys.toggle_format:
                     self.display.format_seconds = not self.display.format_seconds
-                    self.display.clear_buffer = True
+                    self.display.check_clear()
                     self.display.write_header()
 
             except curses.error:
@@ -178,14 +206,14 @@ class Stopwatch:
 
     def add_timestamp(self) -> None:
         """Add a new timestamp/lap"""
-        self.timestamps.append(dt.datetime.now())
-        self.display.clear_buffer = len(self.timestamps) > self.display.num_buffer_rows
+        self.timestamps.append(datetime.now())
+        self.display.check_clear(len(self.timestamps))
 
     def remove_timestamp(self) -> None:
         """Remove the most recent timestamp; undo last mark"""
         if len(self.timestamps) > 1:
             self.timestamps.pop()
-        self.display.clear_buffer = True
+        self.display.check_clear()
 
 
 def main(screen: curses.window) -> None:
