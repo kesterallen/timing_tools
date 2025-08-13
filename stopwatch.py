@@ -2,21 +2,8 @@
 
 import curses
 from curses import A_BOLD, A_NORMAL
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 import sys
-
-
-@dataclass
-class ControlKeys:
-    """Class to encapsulate which user keystrokes do things"""
-
-    mark: frozenset[str, ...] = (" ", "j", "n", "m")
-    drop: frozenset[str, ...] = ("u", "k", "p")
-    resize: frozenset[str, ...] = ("key_resize",)
-    toggle_format: frozenset[str, ...] = ("/", "y")
-    toggle_verbose: frozenset[str, ...] = ("v",)
-    quit: frozenset[str, ...] = ("q",)
 
 
 class StopwatchDisplay:
@@ -48,6 +35,7 @@ class StopwatchDisplay:
         self.blank_line = " " * (self.num_cols - 1)
 
     def exit_msg(self, timestamps):
+        """Generate an exit message"""
         if self.verbose:
             header = self.buffer_key
             buffer = self.get_rows(timestamps, as_string=True)
@@ -56,11 +44,9 @@ class StopwatchDisplay:
             msg = None
         return msg
 
-    def toggle_verbose(self):
-        self.verbose = not self.verbose
-
     @property
     def buffer_key(self) -> str:
+        """Make the key for the buffer"""
         return "Time       #" + (
             "    lap(s)     total(s)"
             if self.format_seconds
@@ -178,31 +164,31 @@ class Stopwatch:
         self.display = StopwatchDisplay(screen)
         self.timestamps = [datetime.now()]
 
-    def run(self) -> None:
-        """Run the stopwatch"""
-        keys = ControlKeys()
-        while True:
-            try:
-                key = self.display.screen.getkey().lower()
-                if key in keys.quit:
-                    msg = self.display.exit_msg(self.timestamps)
-                    sys.exit(msg)
-                elif key in keys.resize:
-                    self.display.set_screen_size()
-                elif key in keys.mark:
-                    self.add_timestamp()
-                elif key in keys.drop:
-                    self.remove_timestamp()
-                elif key in keys.toggle_verbose:
-                    self.display.toggle_verbose()
-                    self.display.write_header()
-                elif key in keys.toggle_format:
-                    self.display.format_seconds = not self.display.format_seconds
-                    self.display.check_clear()
-                    self.display.write_header()
+        self.keystroke_actions = {
+            **dict.fromkeys(" jnm", self.add_timestamp),  # add a lap
+            **dict.fromkeys("ukp", self.remove_timestamp),  # remove a lap
+            **dict.fromkeys("/y", self._toggle_format),  # toggle display format
+            "v": self._toggle_verbose,  # toggle verbosity
+            "q": self._quit,  # quit
+            "key_resize": self._resize,  # handle a resize event
+        }
+        print(self.keystroke_actions)
 
-            except curses.error:
-                self.display.write_buffer(self.timestamps)
+    def _quit(self):
+        msg = self.display.exit_msg(self.timestamps)
+        sys.exit(msg)
+
+    def _resize(self):
+        self.display.set_screen_size()
+
+    def _toggle_verbose(self):
+        self.display.verbose = not self.display.verbose
+        self.display.write_header()
+
+    def _toggle_format(self):
+        self.display.format_seconds = not self.display.format_seconds
+        self.display.check_clear()
+        self.display.write_header()
 
     def add_timestamp(self) -> None:
         """Add a new timestamp/lap"""
@@ -214,6 +200,16 @@ class Stopwatch:
         if len(self.timestamps) > 1:
             self.timestamps.pop()
         self.display.check_clear()
+
+    def run(self) -> None:
+        """Run the stopwatch"""
+        while True:
+            try:
+                key = self.display.screen.getkey().lower()
+                if action := self.keystroke_actions.get(key):
+                    action()
+            except curses.error:
+                self.display.write_buffer(self.timestamps)
 
 
 def main(screen: curses.window) -> None:
