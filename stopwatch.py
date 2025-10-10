@@ -7,7 +7,7 @@ import sys
 import time
 
 
-class StopwatchFormat:
+class StopwatchFormatter:
     """Format handler for stopwatch display"""
 
     FORMAT_DECIMAL_SECONDS = "format_decimal_seconds"
@@ -21,7 +21,7 @@ class StopwatchFormat:
 
     def __init__(self) -> None:
         """Set the initial format to decimal seconds"""
-        self.format = StopwatchFormat.FORMAT_DECIMAL_SECONDS
+        self.current_format = StopwatchFormatter.FORMAT_DECIMAL_SECONDS
 
     def prev(self) -> None:
         """Switch to the prev format mode"""
@@ -29,9 +29,9 @@ class StopwatchFormat:
 
     def next(self, increment: int = 1) -> None:
         """Switch to the next format mode"""
-        icurrent = StopwatchFormat.FORMATS.index(self.format)
-        inext = (icurrent + increment) % len(StopwatchFormat.FORMATS)
-        self.format = StopwatchFormat.FORMATS[inext]
+        icurrent = StopwatchFormatter.FORMATS.index(self.current_format)
+        inext = (icurrent + increment) % len(StopwatchFormatter.FORMATS)
+        self.current_format = StopwatchFormatter.FORMATS[inext]
 
     def row_time(self, time: timedelta, column_width: int = 13, offset: int = 0) -> str:
         """Formatted times for the current and total timestamps"""
@@ -51,33 +51,33 @@ class StopwatchFormat:
             mm, ss = divmod(int(td.total_seconds()), 60)
             return f"{mm:02}:{ss:02}"
 
-        match self.format:
-            case StopwatchFormat.FORMAT_DECIMAL_SECONDS:
+        match self.current_format:
+            case StopwatchFormatter.FORMAT_DECIMAL_SECONDS:
                 formatter = _ss
-            case StopwatchFormat.FORMAT_MINUTES_SECONDS:
+            case StopwatchFormatter.FORMAT_MINUTES_SECONDS:
                 formatter = _mm_ss
-            case StopwatchFormat.FORMAT_HOURS_MINUTES_SECONDS:
+            case StopwatchFormatter.FORMAT_HOURS_MINUTES_SECONDS:
                 formatter = _hh_mm_ss
             case _:
-                raise curses.error(" format error row {self.format}")
+                raise curses.error(" format error row {self.current_format}")
 
         return f"{formatter(time):>{column_width+offset}s}"
 
     @property
     def buffer_key(self) -> str:
         """Make the key for the buffer"""
-        match self.format:
-            case StopwatchFormat.FORMAT_DECIMAL_SECONDS:
+        match self.current_format:
+            case StopwatchFormatter.FORMAT_DECIMAL_SECONDS:
                 unit = "s"
                 space = "        "
-            case StopwatchFormat.FORMAT_MINUTES_SECONDS:
+            case StopwatchFormatter.FORMAT_MINUTES_SECONDS:
                 unit = "mm:ss"
                 space = "    "
-            case StopwatchFormat.FORMAT_HOURS_MINUTES_SECONDS:
+            case StopwatchFormatter.FORMAT_HOURS_MINUTES_SECONDS:
                 unit = "hh:mm:ss"
                 space = " "
             case _:
-                raise curses.error("format error key {self.format}")
+                raise curses.error("format error key {self.current_format}")
         return f"  #     Time {space}lap({unit}){space}total({unit})"
 
 
@@ -88,7 +88,7 @@ class StopwatchDisplay:
         """Create a StopwatchDisplay object to write with"""
         self.screen = screen
         self.clear_buffer = False
-        self.format = StopwatchFormat()
+        self.formatter = StopwatchFormatter()
         self.verbose = False
 
         self.init_curses()
@@ -116,7 +116,7 @@ class StopwatchDisplay:
     def exit_msg(self, timestamps) -> str | None:
         """Generate an exit message"""
         if self.verbose:
-            header = self.format.buffer_key
+            header = self.formatter.buffer_key
             buffer = self.get_rows(timestamps, as_string=True)
             msg = f"{header}\n{buffer}"
         else:
@@ -133,7 +133,7 @@ class StopwatchDisplay:
             "  (seconds / mm:ss / hh:mm:ss)",
             "  v to toggle verbosity (screen dump vs silent quit)",
             "",
-            self.format.buffer_key,
+            self.formatter.buffer_key,
         ]
 
     def write_header(self) -> None:
@@ -149,8 +149,8 @@ class StopwatchDisplay:
 
         def _row_text(time: datetime, previous: datetime, lap_num: int) -> str:
             time_str = f"{time.strftime('%H:%M:%S')}"
-            lap_time = self.format.row_time(time - previous)
-            total_time = self.format.row_time(time - timestamps[0], offset=2)
+            lap_time = self.formatter.row_time(time - previous)
+            total_time = self.formatter.row_time(time - timestamps[0], offset=2)
             return f"{lap_num:3} {time_str} {lap_time} {total_time}"
 
         rows = []
@@ -236,7 +236,7 @@ class Stopwatch:
             "v": self._toggle_verbose,  # toggle verbosity
             "q": self._quit,  # quit
             str(curses.KEY_RESIZE): self._resize,  # handle a resize event
-            '\x01': self._no_input, # ord(abs(-1)), where -1 is the "no input" curses code from getch
+            "\x01": self._no_input,  # ord(abs(-1)), where -1 is the "no input" curses code from getch
         }
 
     def _no_input(self) -> None:
@@ -257,9 +257,9 @@ class Stopwatch:
 
     def _change_format(self, direction="next"):
         if direction == "next":
-            self.display.format.next()
+            self.display.formatter.next()
         else:
-            self.display.format.prev()
+            self.display.formatter.prev()
         self.display.check_clear()
         self.display.write_header()
 
