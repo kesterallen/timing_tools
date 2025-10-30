@@ -22,32 +22,29 @@ class City:
         self.lat = lat
         self.lng = lng
 
-    def str_fmt(self, column_width: int) -> str:
-        return f"{self.name:{column_width}} {self.nowtz_text():{column_width}}"
+    def str_fmt(self, fmt: str) -> str:
+        """City name / time with formatting"""
+        return f"{self.name:{fmt}} {self.nowtz_text():{fmt}}"
 
     def latlng_fmt(self, fmt: str) -> str:
+        """City lat / lng with formatting"""
         return f"{self.lat:{fmt}} {self.lng:{fmt}}"
 
     def nowtz(self) -> datetime.datetime:
         """The current datetime object in a city's time zone."""
-        current_time = datetime.datetime.now(pytz.timezone(self.tz))
-        return current_time
-
-    def nowtz_justtime(self) -> datetime.time:
-        """The just-time subcomponent of the current datetime in a city's time zone."""
-        return self.nowtz().time()
+        return datetime.datetime.now(pytz.timezone(self.tz))
 
     def nowtz_text(self, fmt="%H:%M %a %Z") -> str:
         """The current time formatted text in a specified city's time zone."""
-        current_time = self.nowtz()
-        return current_time.strftime(fmt)
+        return self.nowtz().strftime(fmt)
 
-    def _get_sunrise(self, sunrise: bool = True) -> datetime.time:
+    def _get_suntimes(self) -> tuple[datetime.time, datetime.time]:
         """Determine sunrise or sunset time for a city"""
         sun = suntime.Sun(self.lat, self.lng)
-        sr_time = sun.get_sunrise_time() if sunrise else sun.get_sunset_time()
+        sunrise = sun.get_sunrise_time()
+        sunset = sun.get_sunset_time()
         tz = pytz.timezone(self.tz)
-        return sr_time.astimezone(tz).time()
+        return sunrise.astimezone(tz).time(), sunset.astimezone(tz).time()
 
     @property
     def is_night(self) -> bool:
@@ -56,17 +53,14 @@ class City:
         variables are just times (no date info) so that you're not comparing
         things from different days
         """
-        sunrise = self._get_sunrise()
-        sunset = self._get_sunrise(False)
-        now = self.nowtz_justtime()
+        sunrise, sunset = self._get_suntimes()
+        now = self.nowtz().time()
         return now < sunrise or now > sunset
 
 
-def cities_list(
-    print_all: bool, requested_cities: list, home_city_name: str
-) -> list[City]:
+def all_cities() -> list[City]:
     """Cities sorted by longitude"""
-    all_cities = [
+    cities = [
         City("Berkeley", "America/Los_Angeles", 37.8706606, -122.4657867),
         City("Honolulu", "Pacific/Honolulu", 21.3251912, -158.1307034),
         City("Mexico City", "America/Mexico_City", 19.3907336, -99.1436127),
@@ -74,6 +68,7 @@ def cities_list(
         City("Raleigh", "America/New_York", 35.8391044, -78.9745184),
         City("Azores", "Atlantic/Azores", 38.676345, -27.2990279),
         City("Copenhagen", "Europe/Copenhagen", 55.6708258, 12.2642021),
+        City("Bucharest", "Europe/Bucharest", 44.4268, 26.1025),
         City("Tel Aviv", "Asia/Tel_Aviv", 32.0853, 34.7818),
         City("Moscow", "Europe/Moscow", 55.582026, 37.3855235),
         City("Bangalore", "Asia/Kolkata", 12.9539974, 77.6309395),
@@ -82,27 +77,45 @@ def cities_list(
         City("Sydney", "Australia/Sydney", 33.8482439, 150.9319747),
         City("Auckland", "Pacific/Auckland", -36.8777976, 174.7566242),
     ]
-    cities = []
+    return sorted(cities, key=lambda c: c.lng)
+
+
+def rotate_cities_list(cities: list[City], home: str) -> list[City]:
+    """
+    If possible, rotate the list so that home is first. If home is specified
+    but not in the list of cities, do no rotation.
+    """
+    try:
+        i = [c.name for c in cities].index(home)
+        cities = cities[i:] + cities[:i]
+    except ValueError:
+        pass  # catch value error from .index if home is not in the list of names
+    return cities
+
+
+def filter_cities(
+    cities: list[City], show_all: bool, requested_cities: list[str], home: str
+) -> list[City]:
+    """
+    Filter the list of cities to either be a) just the short list, b) just the
+    specified cities, or c) everything if requested.
+    """
+    filtered_cities = []
     # Sort by longitude and filter:
-    for city in sorted(all_cities, key=lambda c: c.lng):
+    for city in cities:
         # If just the short list of cities is being printed, skip others.
         # If a list of cities has been requested, skip cities not in that list.
-        # The print_all argument overrules both of those options.
-        if not print_all:
+        # The show_all argument overrules both of those options.
+        if not show_all:
             if requested_cities and city.name not in requested_cities:
                 continue
             if not requested_cities and city.name not in SHORT_LIST_NAMES:
                 continue
 
-        cities.append(city)
+        filtered_cities.append(city)
 
-    # If possible, rotate the list so that home_city is first:
-    try:
-        if ihome := [c.name for c in cities].index(home_city_name):
-            cities = cities[ihome:] + cities[:ihome]
-    except ValueError:
-        pass  # catch value error from .index if home_city_name is not in the list of names
-    return cities
+    filtered_cities = rotate_cities_list(filtered_cities, home)
+    return filtered_cities
 
 
 def parse_args():
@@ -113,7 +126,7 @@ def parse_args():
     )
     parser.add_argument(
         "-a",
-        "--print-all",
+        "--show-all",
         action="store_true",
         default=False,
         help="Display times for all cities this program knows",
@@ -127,7 +140,7 @@ def parse_args():
     )
     parser.add_argument(
         "-b",
-        "--home-city",
+        "--home",
         type=str,
         nargs="?",
         default="Berkeley",
@@ -153,9 +166,9 @@ def parse_args():
 def main():
     """Display the list"""
     args = parse_args()
-    cw = args.column_width
-    for city in cities_list(args.print_all, args.cities, args.home_city):
-        msg = city.str_fmt(cw)
+    cities = filter_cities(all_cities(), args.show_all, args.cities, args.home)
+    for city in cities:
+        msg = city.str_fmt(args.column_width)
         if args.lat_lng:
             msg += city.latlng_fmt("-7.2f")
         if city.is_night:
