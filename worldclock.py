@@ -21,66 +21,66 @@ class City:
 
     def __init__(self, name: str, tz: str, lat: float | str, lng: float | str) -> None:
         self.name = name
-        self.tz = tz
+        self.tz = pytz.timezone(tz)
         self.lat = lat if isinstance(lat, float) else float(lat)
         self.lng = lng if isinstance(lng, float) else float(lng)
 
     def nowtz(self) -> datetime.datetime:
         """The current datetime object in a city's time zone."""
-        return datetime.datetime.now(pytz.timezone(self.tz))
+        return datetime.datetime.now(self.tz)
 
     def nowtz_text(self, fmt: str = DEFAULT_TIME_FORMAT) -> str:
         """The current time formatted text in a specified city's time zone."""
         return self.nowtz().strftime(fmt)
 
     def _get_suntimes(self) -> tuple[datetime.time, datetime.time]:
-        """Determine sunrise or sunset time for a city"""
+        """
+        Determine sunrise or sunset time for a city
+
+        The sunset/sunrise variables are datetime.times (no date info)
+        because suntime seems to return the most recent sunrise or sunset (e.g.
+        sunset will be yesterday).
+        """
         sun = suntime.Sun(self.lat, self.lng)
         sunrise = sun.get_sunrise_time()
         sunset = sun.get_sunset_time()
-        tz = pytz.timezone(self.tz)
-        return sunrise.astimezone(tz).time(), sunset.astimezone(tz).time()
+        return sunrise.astimezone(self.tz).time(), sunset.astimezone(self.tz).time()
 
     @property
     def is_night(self) -> bool:
         """
-        Determine if a city is in nighttime now. The sunset/sunrise/now
-        variables are just times (no date info) so that you're not comparing
-        things from different days
+        Determine if it is day or night in a city now.
         """
         sunrise, sunset = self._get_suntimes()
         now = self.nowtz().time()
         return now < sunrise or now > sunset
 
-
-class CityPrinter:
-    @staticmethod
-    def print(city: City, fmt: str, do_lat_lng: bool = False):
+    def printstr(self, fmt: str, do_lat_lng: bool) -> str:
         """Generate the city info in a string for printing"""
-        msg = CityPrinter._name_time(city, fmt)
+        msg = self._name_time(fmt)
         if do_lat_lng:
-            msg += CityPrinter._latlng_fmt(city)
-        if city.is_night:
+            msg += self._latlng_fmt()
+        if self.is_night:
             msg = colored(msg, "dark_grey")
         return msg
 
-    @staticmethod
-    def _name_time(city: City, fmt):
+    def _name_time(self, fmt) -> str:
         """City name / time with formatting"""
-        return f"{city.name:{fmt}s} {city.nowtz_text():{fmt}s}"
+        return f"{self.name:{fmt}s} {self.nowtz_text():{fmt}s}"
 
-    @staticmethod
-    def _latlng_fmt(city: City, fmt: str = "-7.2f") -> str:
+    def _latlng_fmt(self, fmt: str = "-7.2f") -> str:
         """City lat / lng with formatting"""
-        return f"{city.lat:{fmt}} {city.lng:{fmt}}"
+        return f"{self.lat:{fmt}} {self.lng:{fmt}}"
 
 
-def all_cities(filename: str | Path) -> list[City]:
+def load_cities(filename: str | Path, home_base: str) -> list[City]:
     """Cities sorted by longitude"""
     with open(filename) as file:
         cities = [City(*row) for row in csv.reader(file)]
 
-    return sorted(cities, key=lambda c: c.lng)
+    cities = sorted(cities, key=lambda c: c.lng)
+    cities = rotate_list(cities, home_base)
+    return cities
 
 
 def filter_cities(
@@ -102,11 +102,11 @@ def filter_cities(
 
 def rotate_list(cities: list[City], home: str) -> list[City]:
     """
-    If possible, rotate the list so that home is first. If home is specified
-    but not in the list of cities, do no rotation.
+    If possible, rotate the list so that the city named home (city.name == home)
+    is first. If home is specified but not in the list of cities, return the list unchanged.
     """
     try:
-        i = [c.name for c in cities].index(home)
+        i = [i for i, c in enumerate(cities) if c.name.lower() == home.lower()][0]
         cities = cities[i:] + cities[:i]
     except ValueError:
         pass  # catch value error from .index if home is not in the list of names
@@ -169,12 +169,11 @@ def parse_args():
 def main():
     """Display the list"""
     args = parse_args()
-    cities = all_cities(args.city_file)
+    cities = load_cities(args.city_file, args.home_base)
     cities = filter_cities(cities, args.show_all, args.requested_cities)
-    cities = rotate_list(cities, args.home_base)
 
     for city in cities:
-        print(CityPrinter.print(city, args.column_width, args.lat_lng))
+        print(city.printstr(args.column_width, args.lat_lng))
 
 
 if __name__ == "__main__":
