@@ -3,38 +3,33 @@ Word Clock: print times of different cities to the terminal
 """
 
 from argparse import ArgumentParser
+import csv
 import datetime
+from pathlib import Path
 
 import pytz
 import suntime
 from termcolor import colored
 
 
+DEFAULT_TIME_FORMAT = "%H:%M %a %Z"
 SHORT_LIST_NAMES = ["Berkeley", "Copenhagen"]
 
 
 class City:
     """A city with time zone and lat/lng information."""
 
-    def __init__(self, name: str, tz: str, lat: float, lng: float) -> None:
+    def __init__(self, name: str, tz: str, lat: float | str, lng: float | str) -> None:
         self.name = name
         self.tz = tz
-        self.lat = lat
-        self.lng = lng
-
-    def str_fmt(self, fmt: str) -> str:
-        """City name / time with formatting"""
-        return f"{self.name:{fmt}} {self.nowtz_text():{fmt}}"
-
-    def latlng_fmt(self, fmt: str) -> str:
-        """City lat / lng with formatting"""
-        return f"{self.lat:{fmt}} {self.lng:{fmt}}"
+        self.lat = lat if isinstance(lat, float) else float(lat)
+        self.lng = lng if isinstance(lng, float) else float(lng)
 
     def nowtz(self) -> datetime.datetime:
         """The current datetime object in a city's time zone."""
         return datetime.datetime.now(pytz.timezone(self.tz))
 
-    def nowtz_text(self, fmt="%H:%M %a %Z") -> str:
+    def nowtz_text(self, fmt: str = DEFAULT_TIME_FORMAT) -> str:
         """The current time formatted text in a specified city's time zone."""
         return self.nowtz().strftime(fmt)
 
@@ -49,7 +44,7 @@ class City:
     @property
     def is_night(self) -> bool:
         """
-        Determine if currently nighttime in a city. The sunset/sunrise/now
+        Determine if a city is in nighttime now. The sunset/sunrise/now
         variables are just times (no date info) so that you're not comparing
         things from different days
         """
@@ -58,29 +53,54 @@ class City:
         return now < sunrise or now > sunset
 
 
-def all_cities() -> list[City]:
+class CityPrinter:
+    @staticmethod
+    def print(city: City, fmt: str, do_lat_lng: bool = False):
+        """Generate the city info in a string for printing"""
+        msg = CityPrinter._name_time(city, fmt)
+        if do_lat_lng:
+            msg += CityPrinter._latlng_fmt(city)
+        if city.is_night:
+            msg = colored(msg, "dark_grey")
+        return msg
+
+    @staticmethod
+    def _name_time(city: City, fmt):
+        """City name / time with formatting"""
+        return f"{city.name:{fmt}s} {city.nowtz_text():{fmt}s}"
+
+    @staticmethod
+    def _latlng_fmt(city: City, fmt: str = "-7.2f") -> str:
+        """City lat / lng with formatting"""
+        return f"{city.lat:{fmt}} {city.lng:{fmt}}"
+
+
+def all_cities(filename: str | Path) -> list[City]:
     """Cities sorted by longitude"""
-    cities = [
-        City("Berkeley", "America/Los_Angeles", 37.8706606, -122.4657867),
-        City("Honolulu", "Pacific/Honolulu", 21.3251912, -158.1307034),
-        City("Mexico City", "America/Mexico_City", 19.3907336, -99.1436127),
-        City("Milwaukee", "America/Chicago", 43.0576793, -88.1322139),
-        City("Raleigh", "America/New_York", 35.8391044, -78.9745184),
-        City("Azores", "Atlantic/Azores", 38.676345, -27.2990279),
-        City("Copenhagen", "Europe/Copenhagen", 55.6708258, 12.2642021),
-        City("Bucharest", "Europe/Bucharest", 44.4268, 26.1025),
-        City("Tel Aviv", "Asia/Tel_Aviv", 32.0853, 34.7818),
-        City("Moscow", "Europe/Moscow", 55.582026, 37.3855235),
-        City("Bangalore", "Asia/Kolkata", 12.9539974, 77.6309395),
-        City("Shanghai", "Asia/Shanghai", 31.2243489, 121.4767528),
-        City("Tokyo", "Asia/Tokyo", 35.5092405, 139.7698121),
-        City("Sydney", "Australia/Sydney", 33.8482439, 150.9319747),
-        City("Auckland", "Pacific/Auckland", -36.8777976, 174.7566242),
-    ]
+    with open(filename) as file:
+        cities = [City(*row) for row in csv.reader(file)]
+
     return sorted(cities, key=lambda c: c.lng)
 
 
-def rotate_cities_list(cities: list[City], home: str) -> list[City]:
+def filter_cities(
+    cities: list[City], show_all: bool, requested_cities: list[str]
+) -> list[City]:
+    """
+    Filter the list of cities to either be a) just the short list, b) just the
+    specified cities, or c) everything if requested.
+    """
+    if show_all:
+        filtered_cities = cities
+    elif requested_cities:
+        filtered_cities = [c for c in cities if c.name in requested_cities]
+    else:
+        filtered_cities = [c for c in cities if c.name in SHORT_LIST_NAMES]
+
+    return filtered_cities
+
+
+def rotate_list(cities: list[City], home: str) -> list[City]:
     """
     If possible, rotate the list so that home is first. If home is specified
     but not in the list of cities, do no rotation.
@@ -91,31 +111,6 @@ def rotate_cities_list(cities: list[City], home: str) -> list[City]:
     except ValueError:
         pass  # catch value error from .index if home is not in the list of names
     return cities
-
-
-def filter_cities(
-    cities: list[City], show_all: bool, requested_cities: list[str], home: str
-) -> list[City]:
-    """
-    Filter the list of cities to either be a) just the short list, b) just the
-    specified cities, or c) everything if requested.
-    """
-    filtered_cities = []
-    # Sort by longitude and filter:
-    for city in cities:
-        # If just the short list of cities is being printed, skip others.
-        # If a list of cities has been requested, skip cities not in that list.
-        # The show_all argument overrules both of those options.
-        if not show_all:
-            if requested_cities and city.name not in requested_cities:
-                continue
-            if not requested_cities and city.name not in SHORT_LIST_NAMES:
-                continue
-
-        filtered_cities.append(city)
-
-    filtered_cities = rotate_cities_list(filtered_cities, home)
-    return filtered_cities
 
 
 def parse_args():
@@ -140,7 +135,7 @@ def parse_args():
     )
     parser.add_argument(
         "-b",
-        "--home",
+        "--home-base",
         type=str,
         nargs="?",
         default="Berkeley",
@@ -148,7 +143,7 @@ def parse_args():
     )
     parser.add_argument(
         "-c",
-        "--cities",
+        "--requested-cities",
         nargs="*",
         help="A list of cities to display (optional). Defaults to Berkeley and Copenhagen.",
     )
@@ -160,20 +155,26 @@ def parse_args():
         default=20,
         help="Column print width.",
     )
+    parser.add_argument(
+        "-f",
+        "--city-file",
+        type=str,
+        nargs="?",
+        default=Path(__file__).parent / "worldclock_cities.csv",
+        help="The path to a file with a CSV of Name/Timezone/Lat/Lng cities.",
+    )
     return parser.parse_args()
 
 
 def main():
     """Display the list"""
     args = parse_args()
-    cities = filter_cities(all_cities(), args.show_all, args.cities, args.home)
+    cities = all_cities(args.city_file)
+    cities = filter_cities(cities, args.show_all, args.requested_cities)
+    cities = rotate_list(cities, args.home_base)
+
     for city in cities:
-        msg = city.str_fmt(args.column_width)
-        if args.lat_lng:
-            msg += city.latlng_fmt("-7.2f")
-        if city.is_night:
-            msg = colored(msg, "dark_grey")
-        print(msg)
+        print(CityPrinter.print(city, args.column_width, args.lat_lng))
 
 
 if __name__ == "__main__":
