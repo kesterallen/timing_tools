@@ -49,11 +49,19 @@ class City:
     @property
     def is_night(self) -> bool:
         """
-        Determine if it is day or night in a city now.
+        Determine if it is day or night in a city now, using the sunrise and
+        sunset times. If the sun either didn't set today (local winter at
+        extreme lattitudes) or didn't rise (local summer), figure out which and
+        return if the sun is up or not.
         """
-        sunrise, sunset = self._get_suntimes()
-        now = self.nowtz().time()
-        return now < sunrise or now > sunset
+        try:
+            current_time = self.nowtz().time()
+            sunrise, sunset = self._get_suntimes()
+            return current_time < sunrise or current_time > sunset
+        except suntime.SunTimeException:
+            month = self.nowtz().month
+            is_winter = month < 4 or month > 10 # very roughly, between solstices
+            return is_winter
 
     def printstr(self, fmt: str, do_lat_lng: bool) -> str:
         """Generate the city info in a string for printing"""
