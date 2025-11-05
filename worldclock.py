@@ -60,8 +60,8 @@ class City:
             return current_time < sunrise or current_time > sunset
         except suntime.SunTimeException:
             month = self.nowtz().month
-            is_winter = month < 4 or month > 10 # very roughly, between solstices
-            return is_winter
+            winter_northern = month < 4 or month > 10 # very roughly, between solstices
+            return winter_northern and self.lat > 0
 
     def printstr(self, fmt: str, do_lat_lng: bool) -> str:
         """Generate the city info in a string for printing"""
