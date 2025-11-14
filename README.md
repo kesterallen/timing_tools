@@ -10,18 +10,15 @@ This tool lets you:
 
 In the examples below, the command is written as `clock`
 
-
 ## Installation
 
 Install into your environment from the project root:
 
-    pip git+https://github.com/kesterallen/timing_tools.git.
-
+    pip install git+https://github.com/kesterallen/timing_tools.git
 
 ## City Database
 
 The `world-clock` and `search` commands both rely on this database.
-
 
 ## Configuration
 
@@ -43,7 +40,6 @@ When you invoke commands:
 
 - The config is loaded automatically.
 - CLI options override config values for that invocation only.
-
 
 # Commands
 
@@ -101,7 +97,6 @@ Custom column width:
 
     clock world-clock -w 28
 
-
 ## `search` – find city IDs
 
     clock search [OPTIONS] QUERY
@@ -158,7 +153,6 @@ Available subcommands:
 - `reset`
 - `show`
 
-
 ### `config show`
 
     clock config show
@@ -171,7 +165,6 @@ Example output:
       "home_city": 1234,
       "requested_cities": [1234, 5678, 91011]
     }
-
 
 ### `config set-home`
 
@@ -188,7 +181,6 @@ Behavior:
 Example output:
 
     Home city updated → 1234
-
 
 ### `config add-city`
 
@@ -209,7 +201,6 @@ or
 
     City 5678 already in requested list.
 
-
 ### `config remove-city`
 
     clock config remove-city CITY_ID
@@ -229,7 +220,6 @@ or
 
     City 5678 not found in requested list.
 
-
 ### `config reset`
 
     clock config reset
@@ -244,7 +234,6 @@ Behavior:
 Example output:
 
     Removed configuration → /path/to/config/file.json
-
 
 ## Typical workflow
 
@@ -274,7 +263,6 @@ Example output:
 6. Override config for a one-off view:
 
        clock world-clock --home-city 5678 --requested-cities 5678 7654 4321 -v
-
 
 ## Development notes
 
