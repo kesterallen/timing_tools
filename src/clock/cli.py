@@ -155,6 +155,7 @@ def world_clock(
 @app.command("search")
 def search_cities(
     query: Annotated[str, typer.Argument(help="City name or partial name to search for")],
+    max_results: Annotated[int, typer.Option("--max-results", "-m", help="Maximum number of results to display")] = 50,
     similarity: Annotated[
         float,
         typer.Option("--similarity", "-s", help="Similarity threshold between 0 and 1"),
@@ -163,12 +164,30 @@ def search_cities(
     """Search for cities by name and display possible matches."""
     data = json.loads(default_city_file.read_text())
     q = query.lower()
-    matches = get_city_matches(data, q, threshold=similarity)
-    if len(matches) > 50:
-        console.print(f"[red]Too many matches ({len(matches)}). Please use a stricter similarity.[/red]")
-        raise typer.Exit(code=1)
 
-    # Build Rich table
+    matches = get_city_matches(data, q, threshold=similarity)
+
+    if not matches:
+        console.print(f"[yellow]No matches found for '{query}'.[/yellow]")
+        raise typer.Exit(code=0)
+
+    total = len(matches)
+
+    # Sort for stable output
+    matches.sort(key=lambda e: (e.get("country", ""), e.get("state", ""), e.get("name", "")))
+
+    # Truncate for display
+    displayed = matches[:max_results]
+
+    if total > max_results:
+        console.print(
+            f"[yellow]Found {total} matches. "
+            f"Showing the first {max_results}. "
+            f"Try a more specific query or a higher --similarity to narrow results.[/yellow]\n"
+        )
+    else:
+        console.print(f"\n[bold]Matches for:[/] '{query}'\n")
+
     table = Table(show_lines=False, header_style="bold cyan")
     table.add_column("Name", style="bold white")
     table.add_column("State")
@@ -176,10 +195,7 @@ def search_cities(
     table.add_column("Timezone")
     table.add_column("ID", justify="right")
 
-    # Sort for stable output
-    matches.sort(key=lambda e: (e.get("country", ""), e.get("state", ""), e.get("name", "")))
-
-    for e in matches:
+    for e in displayed:
         table.add_row(
             e.get("name", ""),
             e.get("state", "") or "",
@@ -188,7 +204,6 @@ def search_cities(
             str(e.get("id", "")),
         )
 
-    console.print(f"\n[bold]Matches for:[/] '{query}'\n")
     console.print(table)
 
 
