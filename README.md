@@ -272,3 +272,13 @@ Example output:
 - City and search helper functions are provided by:
   - `clock.worldclock` (for `load_cities` and `prepend_home_city`)
   - `clock.search` (for `get_city_matches`)
+
+Attribution
+This project uses geographic data from the
+Countries States Cities Database by dr5hn
+<https://github.com/dr5hn/countries-states-cities-database>
+The data is made available under the
+Open Database License (ODbL) v1.0:
+<https://opendatacommons.org/licenses/odbl/1-0/>
+You must attribute the source and keep the database open if you share or adapt it.
+No affiliation or endorsement is implied.
